@@ -6,7 +6,7 @@ services:
   # ==========================================
   backend:
     build:
-      context: ./app
+      context: ./backend
       dockerfile: Dockerfile
     container_name: pastebin_backend
     ports:
@@ -30,7 +30,23 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # SERVICE 2: MongoDB Persistence Layer
+  # SERVICE 2: React Frontend Web UI (Nginx)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pastebin_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - pastebin_network
+    restart: unless-stopped
+
+  # ==========================================
+  # SERVICE 3: MongoDB Persistence Layer
   # ==========================================
   mongodb:
     image: mongo:7.0
@@ -51,7 +67,7 @@ services:
       start_period: 5s
 
   # ==========================================
-  # SERVICE 3: Redis In-Memory Caching Layer
+  # SERVICE 4: Redis In-Memory Caching Layer
   # ==========================================
   redis:
     image: redis:7.2-alpine
