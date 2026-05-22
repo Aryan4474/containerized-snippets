@@ -73,7 +73,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Validate React App Compile (Build)
         working-directory: ./frontend
