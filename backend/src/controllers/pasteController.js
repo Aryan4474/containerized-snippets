@@ -8,6 +8,7 @@ const config = require('../config');
 /**
  * Creates a new paste snippet in the database.
  * POST /api/pastes
+ * wjbwbek
  */
 exports.createPaste = async (req, res, next) => {
   try {
