@@ -12,5 +12,9 @@ router.post('/', createPasteLimiter, validatePaste, pasteController.createPaste)
 // GET /api/pastes/:shortId
 router.get('/:shortId', pasteController.getPaste);
 
+// Route to delete a paste snippet by its unique short ID and verification token
+// DELETE /api/pastes/:shortId
+router.delete('/:shortId', pasteController.deletePaste);
+
 
 module.exports = router;

@@ -6,6 +6,8 @@ export default function CreatePaste({ showToast }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [expiresIn, setExpiresIn] = useState('never');
+  const [language, setLanguage] = useState('plaintext');
+  const [burnOnRead, setBurnOnRead] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sizeInBytes, setSizeInBytes] = useState(0);
   const navigate = useNavigate();
@@ -45,12 +47,19 @@ export default function CreatePaste({ showToast }) {
           title: title.trim() || undefined,
           content,
           expiresIn,
+          language,
+          burnOnRead
         }),
       });
 
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create paste');
+      }
+
+      // Store deletion token locally to permit creator-only deletion
+      if (result.data && result.data.id && result.data.deleteToken) {
+        localStorage.setItem(`delete_token_${result.data.id}`, result.data.deleteToken);
       }
 
       showToast('Paste created successfully!', 'success');
@@ -96,15 +105,71 @@ export default function CreatePaste({ showToast }) {
                 value={expiresIn}
                 onChange={(e) => setExpiresIn(e.target.value)}
                 style={styles.select}
+                disabled={burnOnRead}
               >
-                <option value="never">Never (Expires in 24h from cache)</option>
-                <option value="10m">10 Minutes</option>
-                <option value="1h">1 Hour</option>
-                <option value="1d">1 Day</option>
-                <option value="1w">1 Week</option>
+                {burnOnRead ? (
+                  <option value="never">N/A (Managed by Burn-on-Read)</option>
+                ) : (
+                  <>
+                    <option value="never">Never (Expires in 24h from cache)</option>
+                    <option value="10m">10 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="1d">1 Day</option>
+                    <option value="1w">1 Week</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
+
+          <div style={styles.inputWrapper}>
+            <label style={styles.label}>Syntax Highlighting</label>
+            <div style={styles.inputContainer}>
+              <FileCode size={16} color="hsl(215, 20%, 65%)" style={styles.fieldIcon} />
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                style={styles.select}
+              >
+                <option value="plaintext">Plain Text</option>
+                <option value="javascript">JavaScript / JSON</option>
+                <option value="python">Python</option>
+                <option value="html">HTML</option>
+                <option value="css">CSS</option>
+                <option value="c">C / C++</option>
+                <option value="bash">Bash / Shell</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.optionsRow}>
+          <label style={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={burnOnRead}
+              onChange={(e) => {
+                setBurnOnRead(e.target.checked);
+                if (e.target.checked) {
+                  setExpiresIn('never');
+                }
+              }}
+              style={styles.checkbox}
+            />
+            <span style={{ 
+              marginLeft: '8px', 
+              color: burnOnRead ? 'hsl(343, 90%, 65%)' : 'hsl(215, 20%, 65%)', 
+              transition: 'all 0.2s', 
+              fontWeight: 500,
+              fontSize: '0.875rem',
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}>
+              🔥 Burn on Read (Automatically destroy immediately after first view)
+            </span>
+          </label>
         </div>
 
         <div style={styles.editorWrapper}>
@@ -277,5 +342,21 @@ const styles = {
       transform: 'translateY(-1px)',
       boxShadow: '0 6px 20px rgba(99, 102, 241, 0.4)',
     }
+  },
+  optionsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    marginBottom: '1.5rem',
+  },
+  checkboxLabel: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    cursor: 'pointer',
+  },
+  checkbox: {
+    accentColor: 'hsl(343, 90%, 65%)',
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
   }
 };

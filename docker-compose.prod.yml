@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # SERVICE 1: Express Backend Application
+  # ==========================================
+  backend:
+    image: void2406/snippetbin-backend:latest
+    container_name: pastebin_backend
+    ports:
+      - "5050:5050"
+    environment:
+      - PORT=5050
+      - NODE_ENV=production
+      - BASE_URL=http://localhost:5050 # Change to your domain name in production
+      - MONGO_URI=mongodb://mongodb:27017/pastebin-db
+      - REDIS_URL=redis://redis:6379
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX=100
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pastebin_network
+    restart: unless-stopped
+
+  # ==========================================
+  # SERVICE 2: React Frontend Web UI (Nginx)
+  # ==========================================
+  frontend:
+    image: void2406/snippetbin-frontend:latest
+    container_name: pastebin_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - pastebin_network
+    restart: unless-stopped
+
+  # ==========================================
+  # SERVICE 3: MongoDB Persistence Layer
+  # ==========================================
+  mongodb:
+    image: mongo:7.0
+    container_name: pastebin_mongodb
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - pastebin_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ==========================================
+  # SERVICE 4: Redis In-Memory Caching Layer
+  # ==========================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: pastebin_redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - pastebin_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  pastebin_network:
+    driver: bridge
+
+volumes:
+  mongodb-data:
+    driver: local
+  redis-data:
+    driver: local

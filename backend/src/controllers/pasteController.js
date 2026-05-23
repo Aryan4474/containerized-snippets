@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Paste = require('../models/Paste');
 const { generateShortId } = require('../utils/idGenerator');
 const { calculateExpiryDate } = require('../utils/dateHelper');
@@ -10,7 +11,7 @@ const config = require('../config');
  */
 exports.createPaste = async (req, res, next) => {
   try {
-    const { content, title, expiresIn } = req.body;
+    const { content, title, expiresIn, language, burnOnRead } = req.body;
 
     // Basic Validation
     if (!content || typeof content !== 'string' || content.trim() === '') {
@@ -41,12 +42,18 @@ exports.createPaste = async (req, res, next) => {
     // Calculate future expiration date
     const expiryAt = calculateExpiryDate(expiresIn);
 
+    // Generate cryptographically secure deletion token
+    const deleteToken = crypto.randomBytes(24).toString('hex');
+
     // Save to Database
     const newPaste = new Paste({
       shortId,
       content,
       title: title && title.trim() !== '' ? title.trim() : 'Untitled',
-      expiryAt
+      expiryAt,
+      deleteToken,
+      language: language || 'plaintext',
+      burnOnRead: burnOnRead || false
     });
 
     const savedPaste = await newPaste.save();
@@ -63,6 +70,9 @@ exports.createPaste = async (req, res, next) => {
         content: savedPaste.content,
         views: savedPaste.views,
         expiryAt: savedPaste.expiryAt,
+        language: savedPaste.language,
+        burnOnRead: savedPaste.burnOnRead,
+        deleteToken: savedPaste.deleteToken, // Only returned to the creator on creation
         shareUrl,
         createdAt: savedPaste.createdAt
       }
@@ -83,7 +93,6 @@ exports.getPaste = async (req, res, next) => {
     const cacheKey = `paste:${shortId}`;
 
     // 1. Try to fetch from Redis (Cache-Aside)
-    // Wrap in a try-catch and check redisClient.isOpen to implement Graceful Degradation
     if (redisClient.isOpen) {
       try {
         const cachedPaste = await redisClient.get(cacheKey);
@@ -91,8 +100,31 @@ exports.getPaste = async (req, res, next) => {
           console.log(`[Cache HIT] Found paste ${shortId} in Redis`);
           const paste = JSON.parse(cachedPaste);
 
+          // If the cached paste has burnOnRead enabled, delete it immediately from DB and Cache
+          if (paste.burnOnRead) {
+            console.log(`[Burn on Read] Deleting paste ${shortId} from DB and Cache (Cache Hit path)`);
+            await Paste.deleteOne({ shortId });
+            await redisClient.del(cacheKey);
+            
+            paste.views += 1;
+
+            return res.status(200).json({
+              success: true,
+              source: 'cache',
+              data: {
+                id: paste.shortId || paste.id,
+                title: paste.title,
+                content: paste.content,
+                views: paste.views,
+                expiryAt: paste.expiryAt,
+                language: paste.language,
+                burnOnRead: paste.burnOnRead,
+                createdAt: paste.createdAt
+              }
+            });
+          }
+
           // Increment view count in MongoDB asynchronously in the background.
-          // This ensures database views are accurate without blocking the immediate response to the client.
           Paste.findOneAndUpdate({ shortId }, { $inc: { views: 1 } }).catch(err => {
             console.error(`Background views increment error for ${shortId}:`, err.message);
           });
@@ -104,11 +136,13 @@ exports.getPaste = async (req, res, next) => {
             success: true,
             source: 'cache',
             data: {
-              id: paste.shortId || paste.id, // supports both serialization versions
+              id: paste.shortId || paste.id,
               title: paste.title,
               content: paste.content,
               views: paste.views,
               expiryAt: paste.expiryAt,
+              language: paste.language,
+              burnOnRead: paste.burnOnRead,
               createdAt: paste.createdAt
             }
           });
@@ -146,6 +180,34 @@ exports.getPaste = async (req, res, next) => {
       });
     }
 
+    // Handle Burn on Read for Cache Miss path
+    if (paste.burnOnRead) {
+      console.log(`[Burn on Read] Deleting paste ${shortId} from DB (Cache Miss path)`);
+      await Paste.deleteOne({ shortId });
+      if (redisClient.isOpen) {
+        try {
+          await redisClient.del(cacheKey);
+        } catch (delError) {
+          console.error(`Failed to delete cache key for burnOnRead:`, delError.message);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        source: 'database',
+        data: {
+          id: paste.shortId,
+          title: paste.title,
+          content: paste.content,
+          views: paste.views + 1,
+          expiryAt: paste.expiryAt,
+          language: paste.language,
+          burnOnRead: paste.burnOnRead,
+          createdAt: paste.createdAt
+        }
+      });
+    }
+
     // Increment views atomically in database
     const updatedPaste = await Paste.findOneAndUpdate(
       { shortId },
@@ -156,16 +218,13 @@ exports.getPaste = async (req, res, next) => {
     // 3. Cache WRITE: Cache retrieved paste back to Redis for subsequent reads
     if (redisClient.isOpen) {
       try {
-        // Prepare the payload for caching
         const cacheData = JSON.stringify(updatedPaste);
         
         if (updatedPaste.expiryAt) {
-          // TTL matches remaining lifetime in seconds
           const ttlSeconds = Math.max(1, Math.round((new Date(updatedPaste.expiryAt) - Date.now()) / 1000));
           await redisClient.set(cacheKey, cacheData, { EX: ttlSeconds });
           console.log(`[Cache WRITE] Cached paste ${shortId} with TTL: ${ttlSeconds}s`);
         } else {
-          // Permanent pastes: cache with default 24h (86400s) TTL to avoid Redis memory bloating
           await redisClient.set(cacheKey, cacheData, { EX: 86400 });
           console.log(`[Cache WRITE] Cached paste ${shortId} with default 24h TTL`);
         }
@@ -183,8 +242,63 @@ exports.getPaste = async (req, res, next) => {
         content: updatedPaste.content,
         views: updatedPaste.views,
         expiryAt: updatedPaste.expiryAt,
+        language: updatedPaste.language,
+        burnOnRead: updatedPaste.burnOnRead,
         createdAt: updatedPaste.createdAt
       }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Deletes a paste snippet by shortId with verification of deleteToken.
+ * DELETE /api/pastes/:shortId
+ */
+exports.deletePaste = async (req, res, next) => {
+  try {
+    const { shortId } = req.params;
+    const deleteToken = req.headers['x-delete-token'] || req.body.deleteToken || req.query.deleteToken;
+
+    if (!deleteToken) {
+      return res.status(401).json({
+        error: 'Unauthorized: Deletion token is required'
+      });
+    }
+
+    const paste = await Paste.findOne({ shortId });
+    if (!paste) {
+      return res.status(404).json({
+        error: 'Paste not found'
+      });
+    }
+
+    // Compare provided delete token with the one in DB
+    if (paste.deleteToken !== deleteToken) {
+      return res.status(401).json({
+        error: 'Unauthorized: Invalid deletion token'
+      });
+    }
+
+    // Delete from MongoDB
+    await Paste.deleteOne({ shortId });
+
+    // Invalidate from Redis
+    const cacheKey = `paste:${shortId}`;
+    if (redisClient.isOpen) {
+      try {
+        await redisClient.del(cacheKey);
+        console.log(`[Cache INVALIDATE] Deleted cache key ${cacheKey} due to deletion`);
+      } catch (cacheError) {
+        console.warn(`Redis error during cache delete: ${cacheError.message}`);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Paste deleted successfully'
     });
 
   } catch (error) {

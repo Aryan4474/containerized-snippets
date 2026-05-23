@@ -3,7 +3,7 @@
  * Validates request body fields and returns structured 400 Bad Request if validation fails.
  */
 const validatePaste = (req, res, next) => {
-  const { content, title, expiresIn } = req.body;
+  const { content, title, expiresIn, language, burnOnRead } = req.body;
   const errors = [];
 
   // 1. Validate content (Mandatory)
@@ -45,6 +45,28 @@ const validatePaste = (req, res, next) => {
       }
     } else {
       errors.push({ field: 'expiresIn', message: 'ExpiresIn must be a string or number' });
+    }
+  }
+
+  // 4. Validate language (Optional)
+  if (language !== undefined && language !== null) {
+    if (typeof language !== 'string') {
+      errors.push({ field: 'language', message: 'Language must be a string' });
+    } else {
+      const allowedLanguages = ['javascript', 'python', 'html', 'css', 'c', 'bash', 'plaintext'];
+      if (!allowedLanguages.includes(language.toLowerCase())) {
+        errors.push({
+          field: 'language',
+          message: `Unsupported language. Must be one of: ${allowedLanguages.join(', ')}`
+        });
+      }
+    }
+  }
+
+  // 5. Validate burnOnRead (Optional)
+  if (burnOnRead !== undefined && burnOnRead !== null) {
+    if (typeof burnOnRead !== 'boolean') {
+      errors.push({ field: 'burnOnRead', message: 'burnOnRead must be a boolean' });
     }
   }
 

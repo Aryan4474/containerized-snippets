@@ -34,6 +34,22 @@ const PasteSchema = new mongoose.Schema(
       type: Date,
       default: null,
       index: { expires: 0 } 
+    },
+    // Token for verifying delete authorization
+    deleteToken: {
+      type: String,
+      required: true
+    },
+    // Highlight language option selected on creation
+    language: {
+      type: String,
+      default: 'plaintext',
+      trim: true
+    },
+    // Flags if the paste should be destroyed upon first retrieval
+    burnOnRead: {
+      type: Boolean,
+      default: false
     }
   },
   {
