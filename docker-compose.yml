@@ -19,7 +19,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - RATE_LIMIT_WINDOW_MS=900000
       - RATE_LIMIT_MAX=100
-    # Wait until DB and Cache are healthy before booting the backend
+   
     depends_on:
       mongodb:
         condition: service_healthy
@@ -52,13 +52,13 @@ services:
     image: mongo:7.0
     container_name: pastebin_mongodb
     ports:
-      - "27017:27017" # Exposed to host for development GUI access (Compass/Robo3T)
+      - "27017:27017" 
     volumes:
       - mongodb-data:/data/db
     networks:
       - pastebin_network
     restart: unless-stopped
-    # Health check verifying MongoDB is ready to accept queries
+  
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
       interval: 10s
@@ -73,13 +73,12 @@ services:
     image: redis:7.2-alpine
     container_name: pastebin_redis
     ports:
-      - "6379:6379" # Exposed to host for troubleshooting
+      - "6379:6379" 
     volumes:
       - redis-data:/data
     networks:
       - pastebin_network
     restart: unless-stopped
-    # Health check verifying Redis is ready to accept commands
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

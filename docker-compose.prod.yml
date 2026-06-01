@@ -12,7 +12,7 @@ services:
     environment:
       - PORT=5050
       - NODE_ENV=production
-      - BASE_URL=http://localhost:5050 # Change to your domain name in production
+      - BASE_URL=http://localhost:5050 
       - MONGO_URI=mongodb://mongodb:27017/pastebin-db
       - REDIS_URL=redis://redis:6379
       - RATE_LIMIT_WINDOW_MS=900000

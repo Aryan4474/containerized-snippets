@@ -1,17 +1,13 @@
-# Ignore local dependencies
 node_modules/
 npm-debug.log*
 
-# Ignore environment configs (injected dynamically via Docker Compose)
 .env
 .env*
 
-# Ignore repository and OS metadata
 .git
 .gitignore
 .DS_Store
 
-# Ignore test and temporary files
 coverage/
 *.log
 src/utils/test-db.js

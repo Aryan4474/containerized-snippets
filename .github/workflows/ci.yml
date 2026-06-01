@@ -1,6 +1,6 @@
 name: Continuous Integration (CI)
 
-# Trigger this workflow on pushes to main/master branches or pull requests
+
 on:
   push:
     branches: [ main, master ]
